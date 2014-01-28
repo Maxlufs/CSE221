@@ -1,0 +1,155 @@
+% ----------------------------------------------------------------
+% Article Class (This is a LaTeX2e document)  ********************
+% ----------------------------------------------------------------
+\documentclass[12pt]{article}
+\usepackage[english]{babel}
+\usepackage{amsmath,amsthm}
+\usepackage{amsfonts}
+\usepackage{geometry}
+\usepackage{enumerate}
+\usepackage{graphicx}
+\geometry{left=2.5cm,right=2.5cm,top=2cm,bottom=2cm}
+% THEOREMS -------------------------------------------------------
+\newtheorem{thm}{Theorem}[section]
+\newtheorem{cor}[thm]{Corollary}
+\newtheorem{lem}[thm]{Lemma}
+\newtheorem{prop}[thm]{Proposition}
+\theoremstyle{definition}
+\newtheorem{defn}[thm]{Definition}
+\theoremstyle{remark}
+\newtheorem{rem}[thm]{Remark}
+\numberwithin{equation}{section}
+% ----------------------------------------------------------------
+\begin{document}
+%Title------------------------------------------------------------
+\title{\textsc{CSE221: Assignment 0}}%
+\date{}
+\author{\small Qiheng \textsc{Wang}}%
+\maketitle
+\noindent{\scriptsize Assignment 1: due Wednesday, April 3, 2013, in class.\\
+
+%Question1------------------------------------------------------------
+	1. Privileged instructions:
+	A privileged instruction is one that is only allowed to be executed in
+	Ring-0
+	(i.e. kernel mode).
+	a. Set value of timer: privileged
+	Only the kernel should be cable to set value of the timer, otherwise user
+	processes could dominate CPU usage. This may lead to unintended results such
+	as preventing other processes from accessing resource.
+
+	b. Read the clock: unprivileged
+	User processes can't really harm the system by merely reading the clock. On
+	the other hand If all processes need to make a system call everytime they need
+	to read the clock, the expense would be too huge.
+
+	c. Clear memory: privileged
+	User processes should not be allowed to clear memory of any other processes.
+
+	d. Turn off interrupts: privileged
+	The kernel handles interrupts. If interrupts can be turned of by a user
+	processes, the kernel may never gains control.
+
+	e. Switch from user to kernel mode: unprivileged
+	User processes should be able to enter kernel mode by making system calls,
+	which themselves don't need to be privileged.
+
+%Question2------------------------------------------------------------
+	2.1
+	class CountdownEvent {
+
+		private int counter;
+		private bool isSignalled; // 0: nonsignalled, 1: signalled
+		private Lock lock; // pthread_mutex_lock
+		private Condition cond; //pthread_cond_broadcast
+
+		CountdownEvent (int count) {
+			this.counter = count;
+			isSignalled = count > 0 ? false : true;
+			lock = new Lock();
+			cond = new Condition();
+		}
+		void Increment() {
+			lock.Acquire();
+			if (isSignalled) return;
+			this.counter++;
+			lock.Release();
+		}
+		void Decrement() {
+			lock.Acquire();
+			if (isSignalled) return;
+			this.counter--;
+			if (this.counter == 0) {
+				isSignalled = true;
+				cond.Broadcast(); // unblock ALL wait list thread
+			}
+			lock.Release();
+		}
+		void Wait() {
+			lock.Acquire();
+			if (isSignalled) return;
+			cond.Wait(&lock); //wait on the condition variable mutex
+			lock.Release();
+		}
+	}
+
+	2.2 Semantic difference between CountdownEvent and Semaphore:
+	CountdownEvent can be regarded as an inverse Semaphore.
+	In the case of Microsoft .NET:
+	Semaphore: Threads call WaitOne() before running, which decrements the
+	semaphore, and call Release() after done, which increments it.
+	CountdownEvent: Threads call Increment() before running, which increments
+	the counter, and call Decrement() after done, which decrements it. Then
+
+	There's some other implied differences:
+	Block state: Threads always explicitly block on CountdownEvent when calling Wait().
+	On the other hand, threads may or may not block on Semaphores. (It depends
+	on the internal state of the semaphore counter.)
+	Initial value: Semaphore can be zero (a private samaphore for order synchronization),
+	CountdownEvent cannot, since it would be set to "signalled" and return.
+	Re-usability: CountdownEvent is a single usage object, once hit zero, it
+	does nothing other than return. Semaphore is reusable. the value can go
+	back and forth.
+	Value: For n parallel processes, Semaphore's value varies from 1-n to 1.
+	CountdownEvent's value varies from 0 to n
+	Wake-up: CountdownEvent wakes up all waiting threads, Semaphore only wakes
+	up one.
+
+	2.3 Brrier class:
+		class Barrier {
+			CountdownEvent ev;
+			Barrier (int n) {
+				ev = new CountdownEvent(n);
+			}
+			void Done () {
+				ce.Decrement();
+				ce.Wait();
+			}
+		}
+	Barrier class allows you to parallelize tasks in a sense that a task
+	does not continue until all entries in the barrier have signaled their
+	arrival. CountdownEvent is a single usage object (need reallocation
+	for a new allocation), while Barrier is reusable.
+
+%Question3------------------------------------------------------------
+	3 Virtual memory and TLB:
+	Assume we have a hardware cache TLB, residing in a chip's MMU.
+	Since PTE for P is not in the TLB, this causes a TLB miss. The hardware will
+	have to consult the page table in the main memory, via a page-table base
+	register (PTBR).  After finding the correct the PTE, update the TLB and retry the memory reference.
+	However, as in this case. P is paged out to disk, which means P still can'be found in the main memory, (the
+	valid bit being off). This renders a page fault, generating a trap into
+	the kernel.
+	Once found, read P into a free frame onto the memory. This may need a page
+	replacement if there's no room for P.
+	Record frame number in the page table entry. Finnaly set valid bit to 1.
+	Finally when the instruction is re-executed, the TLB lookup would result in a hit.
+
+	Assume we have a software-managed TLB. The hardware doesn't have to do
+	much on a miss as above. It raises an exception, and the OS TLB miss
+	handler takes over. More over, the OS can use any data structure it wants
+	to implement the page table.
+	The advantages of software-managed TLB over hardware is simplicity and
+	flexibility.
+
+\end{document}

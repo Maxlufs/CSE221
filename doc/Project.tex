@@ -116,6 +116,17 @@ The machine we used as the subject of our experiments is described in Table 1.
 
 \section{CPU, Scheduling, and OS Services}
 
+To accomplish following set of measurements, testing against a normally
+running OS is insufficient. Therefore, we modified a few kernel settings so
+that the test results are more accurate and closer to the theoretical values.
+
+The machine we tested has two cores. We isolate one core by adding
+\texttt{isolcpus=0} in bootloader configuration file. All the testing scripts
+are run with \texttt{taskset -c 0\space./test} syntax. Therefore, we ensure minimum
+number of system processes interfere with our testing code, thus minimizing
+context switching overhead. Interrupts are also disabled during testing.
+Finally, only one measurement is run at one time.
+
 \subsection{Measurement Overhead}
 The goal of this section is to report the overhead of reading system time and
 the overhead of using loops to measure iterations of an operation.  These
@@ -185,6 +196,7 @@ The experimental results are presented in Table~\ref{table:rdtsc_overhead}.
   \end{tabular}
 \label{table:rdtsc_overhead}
 \end{table}
+
 \subsubsection{Result Discussion}
 
 The predicted performance was less than the measured performance. Our
@@ -362,15 +374,112 @@ it is a thread not a process.
 \subsection{Context Switch Time}
 The goal of this section is to report the time taken to context switch from
 one process to another in comparison to the time taken to context switch from
-one kernel thread to another.
+one kernel thread to another.  A context switch in essence is the process of
+storing current process state and restoring another. More specifically,
+storing a state means changing the process's state to ready or blocked;
+restoring a state brings the process from ready to running.
+
+The overhead time spent in a context switch consists of several parts.  First
+and foremost, by definition time needs to be spent saving and restoring
+a process's states.  Secondly, process caching may also influence the overhead
+time. Thirdly, virtual memory mapping, synchronization of memory caches,
+paging, these elements also may not be ignored when switching between
+processes. Finally, interrupts may occur in the middle of measurement.
+
+In this paper, we mainly compare a process-level context switch and a kernel
+thread-level context switch.
+
 \subsubsection{Experiment Methodology}
+In order to measure the time taken to make a context switch between two
+processes, we utilized blocking pipes to ensure synchronization. The way we
+designed the test to measure just the time for context switching required the
+use of the pipe's ability to pass data.
+
+At first, we tried to use a simple \texttt{fork} followed by and \texttt{exit}
+in the child process, and use \texttt{waitpid} in the parent process in order
+to achieve synchronization. The implementation of this method is trivial, but
+it turned out to generate irregular results. Forking child processes within
+a loop easily drains memory, while using \texttt{waitpid} adds a unstable
+overhead to the measurement.
+
+For user-level process context switching, we eventually decided to use a pipe
+mechanism to ensure synchronization. We first spawned a child process
+wherein a time was taken before a \texttt{write()} procedure to the pipe with
+the time passed into the pipe as part of its arguments. The child process
+immediately calls exit after and a context switch is made back to the parent
+process.  Within the parent process, we immediately call a \texttt{read()}
+procedure and store the first time taken in the child process.  A second time
+is taken right after and the difference is taken. In the parent process, we
+used waitpid() to ensure the following order of execution: parent, child,
+parent. Because pipes forces context switch into the kernel, the significant
+overhead of the \texttt{write()} and \texttt{read()} operations were also
+measured and taken into account in the final calculations. Each context switch
+was performed 10000 times and an average was taken. This measurement tool was
+ran 10000, and an average and standard deviation was taken for the final
+results.
+
+For kernel-level thread context switching, we also used pipe to force two
+threads to synchronize.  First, we created two pipes p1 and p2. In both of
+pipes, define the first integer as reading, and the second integer is writing.
+Then, we use \texttt{pthread\_create()} and \texttt{pthread\_join()}to create
+two threads: Ta and Tb. Set the pthread scope
+\texttt{PTHREAD\_SCOPE\_SYSTEM}to ensure that this thread is a kernel thread.
+After this, we timestamp the initial time t0 in the start of thread Ta.  Let
+both threads communicate to each other though the two given pipes. Ta writes
+data to p1 and listens to p2; Tb writes data to p2 and listens to p1.  The
+communication is repeated 1000 times in both processes.  In the end of Ta, get
+time stamp t1. The time duration $dt = t1-t0$ includes 2000 context switches,
+so we can get the average context switch overhead by $dt/2000$. This precess
+is repeated
+100 times.
+
 \subsubsection{Prediction}
+
+The prediction for context switching is not easy. But we can be sure that
+a kernel-level thread context switching would spend way less time than
+a process one.
+
+For process context switching, a process must call \texttt{wait}, jump into
+kernel mode, then the kernel picks the right process to wake it up, pass
+parameters. If the process is switched out to memory, hardware may also add
+extra overhead.
+For kernel threads, since threads share the same file descriptors, signals,
+etc.\ , we estimate a smaller hardware overhead.
+
+
 \subsubsection{Experiment Results}
+
+The results can be found in table~\ref{table:contextSwitch_overhead}.
+
+\begin{table}
+	\begin{center}
+  \caption{Context switching overhead performance (in cycles)}
+  \begin{tabular}{|l|l|l|l|l|l|}
+    \hline
+    Operation             & Hardware Est.         & Software Est.         & Prediction            & Mean          & Std. Deviation     \\ \hline
+    Process     & \textless50000  & \textless20000   & \textless60000 & 71582.43 (0.0286 ms)  & 507.32 (0.001 ms)    \\ \hline
+    Kernel Thread      & \textless10000 & \textless10000 & \textless 20000 & 23425.98 (9760.8 ns) & 211.34 (88.058 ns)  \\ \hline
+  \end{tabular}
+\label{table:contextSwitch_overhead}
+\end{center}
+\end{table}
+
+The results pretty much similar to the predictions.
+
 \subsubsection{Result Discussion}
+
+Forcing a context switch is not simple. When measuring process-level context
+swiching, at first we only used forking to test the overhead, but the results
+were very irradical.
+
+During implementation of thread-level context switching, we first tried using
+a mutex and wait-and-signal mechanism to preserve synchronization. However,
+This method leads to complex structures and to the necessity to test overheads
+of using semaphores.  Using the pipe mechanism forces the context switch
+orders without much complexity, and it's more trackable to debug.
 
 
 \subsection{Time Consumption}
-\subsubsection{CPU, Scheduling, and OS Services}
 Boyuan Qin:\\
 Dexin Qi: 22+ hours\\
 Qiheng Wang:\\

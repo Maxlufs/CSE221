@@ -8,6 +8,8 @@
 
 #include "cycle.h"
 
+#define LOOP_COUNT 1000000
+
 /*
  *void
  *read_from_pipe(int file) {
@@ -35,6 +37,12 @@ int main(int argc, char *argv[]) {
 	pid_t pid;
 	int fd[2]; // file descriptors for pipe
 
+	char* a = (char*)malloc(sizeof(char));
+	a[0] = 'a';
+	/*char a = 'a';*/
+	int sum = 0.0;
+	double avg = 0.0;
+
 	/*basic syntax:                                 */
 	/*pipe(fd);                                     */
 	/*return 0 success, -1 errno = [EMFILE | EFAULT]*/
@@ -45,28 +53,40 @@ int main(int argc, char *argv[]) {
 	}
 
 	/*open a pipe to parent itself, test time*/
-	ticks t1 = getticks();
-	ticks t2 = getticks();
+	int i;
+	for (i = 0; i < LOOP_COUNT; ++i) {
+		ticks t1 = getticks();
+		write(fd[1],a,1);
+		read(fd[0],a,1);
+		ticks t2 = getticks();
+		ticks d = t2 - t1;
+		sum += (int)d;
+	}
+
+	avg = (double)sum / LOOP_COUNT;
+	fprintf(stdout, "avg = %f\n", avg);
+
+	free(a);
 
 	/*cast 0 to pid_t*/
-	if (( pid = fork() ) < (pid_t) 0) {
-		fprintf(stderr, "Fork failed\n");
-		return EXIT_FAILURE;
-	}
+	/*if (( pid = fork() ) < (pid_t) 0) {*/
+	/*fprintf(stderr, "Fork failed\n");*/
+	/*return EXIT_FAILURE;*/
+	/*}*/
 
-	if (pid == (pid_t) 0) { // Child process
-		close(fd[1]); // close write, try to read
-		/*read_from_pipe(fd[0]);*/
-		exit(0);
-	}
-	else { // parent process
-		close(fd[0]); // close read, try to write
-		/*write_to_pipe(fd[1]);*/
-		exit(0);
-		/*return EXIT_SUCCESS;
-		 * use exit instead of return, so the child process terminates
-		 * immediately */
-	}
+	/*if (pid == (pid_t) 0) {  Child process*/
+	/*close(fd[1]);  close write, try to read*/
+	/*read_from_pipe(fd[0]);*/
+	/*exit(0);*/
+	/*}*/
+	/*else {  parent process*/
+	/*close(fd[0]);  close read, try to write*/
+	/*write_to_pipe(fd[1]);*/
+	/*exit(0);*/
+	/*return EXIT_SUCCESS;*/
+	/*use exit instead of return, so the child process terminates*/
+	/*immediately */
+	/*}*/
 
 	return 0;
 }
